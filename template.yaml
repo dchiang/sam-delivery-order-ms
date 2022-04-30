@@ -1,0 +1,128 @@
+# This is the SAM template that represents the architecture of your serverless application
+# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-template-basics.html
+
+# The AWSTemplateFormatVersion identifies the capabilities of the template
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/format-version-structure.html
+AWSTemplateFormatVersion: 2010-09-09
+Description: sam-delivery-order-ms
+
+# Transform section specifies one or more macros that AWS CloudFormation uses to process your template
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/transform-section-structure.html
+Transform: AWS::Serverless-2016-10-31
+
+# Resources declares the AWS resources that you want to include in the stack
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
+Resources:
+  DeliveryOrderFifoQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      FifoQueue: true
+      ContentBasedDeduplication: true
+
+  RequestDeliveryTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: RequestDeliveryTopic
+      Subscription:
+        - Endpoint: #https://first.provider/example/url
+          Protocol: https
+        - Endpoint: #https://first.provider/example/url
+          Protocol: https
+
+  # Each Lambda function is defined by properties:
+  # https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+
+  # This is a Lambda function config associated with the source code: post-delivery-order.js
+  postDeliveryOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/post-delivery-order.postDeliveryOrderHandler
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 3
+      Description: Publish a new delivery order into the queue
+      Environment:
+        Variables:
+          SQSqueueName: !Ref DeliveryOrderFifoQueue
+      Policies:
+        ## Read more about SAM Policy templates at:
+        ## https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt DeliveryOrderFifoQueue.QueueName
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /
+            Method: POST
+
+  putDeliveryOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/update-delivery-order.putDeliveryOrderHandler
+      Runtime: nodejs14.x
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 3
+      Description: Publish a new delivery order into the queue
+      Environment:
+        Variables:
+          # Make table name accessible as environment variable from function code during execution
+          TABLE: !Ref DeliveryOderTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DeliveryOderTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /
+            Method: PUT
+
+  DeliveryOrderQueueSubscriberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/delivery-order-subscriber.deliveryOrderSubscriberHandler
+      Runtime: nodejs14.x
+      MemorySize: 128
+      Timeout: 3
+      Description: Subscribe to the delivery order queue to receive delivery order creation events
+      # ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          # Make table name accessible as environment variable from function code during execution
+          TABLE: !Ref DeliveryOderTable
+          TOPIC: !Ref RequestDeliveryTopic
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt DeliveryOrderFifoQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DeliveryOderTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt RequestDeliveryTopic.TopicName
+      Events:
+        NewDeliveryOrderEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt DeliveryOrderFifoQueue.Arn
+            BatchSize: 10
+
+  # DynamoDB table to store delivery request
+  DeliveryOderTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: delivery_order
+      PrimaryKey:
+        Name: id
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 2
+        WriteCapacityUnits: 2
+
+Outputs:
+  WebEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"

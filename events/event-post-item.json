@@ -1,0 +1,4 @@
+{
+  "httpMethod": "POST",
+  "body": "{\"client\":{\"fullName\":\"Juan Pueblo\",\"phone\":\"+593992548632\"},\"pickUp\":{\"latitude\":-2.0866652,\"longitude\":-79.9139169,\"address\":\"Avda. 3era Principal y Calle Vehicular Mz-115 Solar 5, Guayaquil 090703\",\"reference\":\"Tía Vergeles\"},\"dropOff\":{\"latitude\":-2.284216,\"longitude\":-79.884772,\"address\":\"C. Guasmo Sur 23, Guayas 090112\",\"reference\":\"diagonal a la Cooperativa Policía Nacional\"}}"
+}
